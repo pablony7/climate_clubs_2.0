@@ -76,18 +76,33 @@ class Region:
          #print(cp_club, self.cp, self.dexp, self.exp, ROW_share, club_size)
         return  round(cost, 0) 
 
-    def cost_income(self, cp_club, implicitcp, club_trade_size, non_members):
-        if all(nm.cp >= cp_club for nm in non_members):
-            cost = 0
+    def cost_income(self, tariff, cp_club, implicitcp, club_trade_size, non_members, min_cp):
+        if all(nm.cp >= cp_club for nm in non_members) or cp_club <= self.cp:
+            cost = 0            
         elif self.dinc < 0:
-            cost = -((cp_club)/ implicitcp) * self.dinc * self.gni *  club_trade_size 
+            tau = ((cp_club - self.cp)/(cp_club - min_cp)) * tariff/cp_club
+            cost = -((cp_club)/ implicitcp) * self.dinc * self.gni *  club_trade_size * tau
             #print("GNI = ", self.gni)
             #print("Welfare change = ", self.dwelf)
         else:
-            cost = -((cp_club)/ implicitcp) * self.dinc * self.gni * (1-club_trade_size)   
+            tau = ((cp_club - self.cp)/(cp_club - min_cp)) * tariff/cp_club
+            cost = -((cp_club)/ implicitcp) * self.dinc * self.gni * (1-club_trade_size) * tau  
          #print(cp_club, self.cp, self.dexp, self.exp, ROW_share, club_size)
         return  round(cost, 0) 
 
+    def cost_income_nm(self, tariff, cp_club, implicitcp, club_trade_size, non_members, min_cp):
+        if all(nm.cp >= cp_club for nm in non_members if nm != self) or cp_club <= self.cp:
+            cost = 0            
+        elif self.dinc < 0:
+            tau = ((cp_club - self.cp)/(cp_club - min_cp)) * tariff/cp_club
+            cost = -((cp_club)/ implicitcp) * self.dinc * self.gni *  club_trade_size * tau
+            #print("GNI = ", self.gni)
+            #print("Welfare change = ", self.dwelf)
+        else:
+            tau = ((cp_club - self.cp)/(cp_club - min_cp)) * tariff/cp_club
+            cost = -((cp_club)/ implicitcp) * self.dinc * self.gni * (1-club_trade_size) * tau  
+         #print(cp_club, self.cp, self.dexp, self.exp, ROW_share, club_size)
+        return  round(cost, 0) 
 
  
     def cost_staying(self, tariff, cp_club, exp_club, cm_size, min_cp, method): 

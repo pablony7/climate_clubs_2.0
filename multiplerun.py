@@ -12,22 +12,24 @@ initial_regs = [[30], [2], [1,2]]
 initial_regs_name = ['CHE', 'EU+', 'US & EU+']
 
 #Changing variables
-method = 'export'
-initial_reg = [2]
-dist = 1
-gdp_method = False
+method = 'gdp'
+initial_reg = [0,2]
+dist = 0
+gdp_method = True
+consider_investment = True
+club_size_w_cp = False
 
 #for initial_reg in initial_regs:
-filename2 = f'{initial_reg}_{method}_gdpmethod_{dist}_{gdp_method}.txt'
+filename2 = f'{initial_reg}_{method}_{dist}_gdpmethod_{gdp_method}_investment_{consider_investment}_sizewcp_{club_size_w_cp}_2.txt'
 with open(filename2, 'w') as f2:    
     for carbon_price in carbon_prices:    
          for tariff_relative in tariffs_relative:
             tariff = int(carbon_price * tariff_relative)
-            filename = f'cp{carbon_price},bca{tariff},{initial_reg},{method}_gdp_{dist}_{gdp_method}.txt'
+            filename = f'cp{carbon_price},bca{tariff},{initial_reg},{method}_{dist}_gdpmethod_{gdp_method}_investment_{consider_investment}_sizewcp_{club_size_w_cp}_2.txt'
             
             with open(filename, 'w') as f:
                 sys.stdout = f
-                regionsname, regionsemissions, status = main.run(initial_reg, carbon_price, tariff, method, distribution = dist, gdp_method = gdp_method)
+                regionsname, regionsemissions, status = main.run(initial_reg, carbon_price, tariff, method, distribution = dist, gdp_method = gdp_method, consider_investment = consider_investment, club_size_w_cp = club_size_w_cp)
                 sys.stdout = sys.__stdout__
                 
             co2_emissions = sum(regionsemissions[i] for i, sublist in enumerate(status) if sublist[-1] == 1)  
@@ -93,4 +95,5 @@ carbon_prices_used = [50, 200, 400, 50, 200, 400, 50, 200, 400]
 initial_reg_name = ['CHE', 'EU+', 'US and EU+']
 """
 plotclub.MultipleMembershipGrid(regsname, statuses, carbon_prices_used, tariffs_used)
+#plotclub.TwoMembershipGrid(regsname, statuses, carbon_prices_used, tariffs_used)
 #plotclub.MultipleMembershipGridWTO(regsname, statuses, carbon_prices_used, initial_reg_name)

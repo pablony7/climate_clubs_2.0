@@ -5,7 +5,7 @@ import numpy as np
 
 
 
-def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distribution = 0.5, gdp_method = False, GDP_percent = 1): 
+def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distribution = 0.5, GDP_percent = 1, gdp_method = False, consider_investment = False, club_size_w_cp = False): 
     #Main function of the model, takes as input the initial coalition of club members, a carbon price, a BCA, the method for BCA revenue distribution and a myopia rate (mu, set by default at 1).
     #Possible methods for BCA revenue distribution: equal, export, abatement, WTO
     # If the chosen method is "abatement," the distribution variable can be explicitly defined (set by default at 0.5) to indicate how benefits are distributed among members and non-members.
@@ -22,8 +22,10 @@ def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distr
     implicitcp = {m: cp for m, cp in zip(regionsname, regionscp)}
     previous_abatement = {}
     previous_cost_cp = {}
-    potential_cp = {region.name: region.cp for region in regions}
     original_nm = {}; original_m = {}
+    investment_abat_cost = {region.name: 0.0 for region in regions}
+
+    
     remaining_abatement_cost = {}
     prev_remaining_abatement_cost = {}
     i = 0
@@ -43,9 +45,13 @@ def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distr
 
     #initiating the rounds and defining/reinitiating variables
     while i<rounds:       
-        #year = i + 2025       
-        club_trade_size = calc_size(club.members,non_members)
-        print(club_trade_size)
+        #year = i + 2025 
+        if club_size_w_cp:
+            club_trade_size = calc_size_cp(club.members,non_members,implicitcp, club.cp)
+        else:
+            club_trade_size = calc_size(club.members,non_members)
+        print("Size of the club", club_trade_size)
+        #print(club_trade_size)
         di = distribution*club_trade_size    
         cm_size = len(club.members) 
         min_cp = min([region.cp for region in regions])
@@ -78,7 +84,8 @@ def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distr
         abatement_cost = {}
         cost_staying_nm = {}
         cost_cp = {region.name: 0.0 for region in regions}
-        total_abatement_nm = sum(previous_abatement[nm.name] for nm in original_nm)
+        #total_abatement_nm = sum(previous_abatement[nm.name] for nm in original_nm)
+        total_abatement_nm = sum(previous_abatement[nm.name] for nm in original_nm if nm in non_members)
         for nm in non_members:   
             cost_staying_nm[nm.name] = nm.cost_staying(club.tariff, club.cp, exp_club[nm.name], cm_size, min_cp, method)       
             total_revenue += cost_staying_nm[nm.name]
@@ -87,22 +94,27 @@ def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distr
             elif method == "abatement":   
                 abatement_cost[nm.name] = returned_revenues(nm, club.cp, MACeq[nm.name], iMACeq[nm.name], previous_abatement, 
                                         previous_revenue_ab, original_nm, total_abatement_nm)
+                remaining_abatement_cost[nm.name] = abatement_cost[nm.name]
             elif gdp_method:
                 abatement_cost[nm.name], cost_cp[nm.name], remaining_abatement_cost[nm.name] = cost_gdp_method_nm(nm, club.cp, implicitcp[nm.name], total_abatement_cost[nm.name], MACeq[nm.name], iMACeq[nm.name], previous_abatement, previous_cost_cp, GDP_percent, prev_remaining_abatement_cost)
             else:
                 abatement_cost[nm.name] = nm.cost_abatement(club.cp, MACeq[nm.name], iMACeq[nm.name])
                 remaining_abatement_cost[nm.name] = abatement_cost[nm.name]
         for m in club.members:
-            if method == "abatement" and gdp_method:
-                abatement_cost[m.name], cost_cp[m.name], remaining_abatement_cost[m.name] = return_gdp_revenues(m, club.cp, implicitcp[m.name], total_abatement_cost[m.name], MACeq[m.name], iMACeq[m.name], GDP_percent, prev_remaining_abatement_cost, previous_abatement, previous_revenue_ab, original_nm, total_abatement_nm)
+            #if method == "abatement" and gdp_method:
+            #    abatement_cost[m.name], cost_cp[m.name], remaining_abatement_cost[m.name] = return_gdp_revenues(m, club.cp, implicitcp[m.name], total_abatement_cost[m.name], MACeq[m.name], iMACeq[m.name], GDP_percent, prev_remaining_abatement_cost, previous_abatement, previous_revenue_ab, original_nm, total_abatement_nm)
+            if gdp_method: 
+                abatement_cost[m.name], cost_cp[m.name], remaining_abatement_cost[m.name] = cost_gdp_method(m, club.cp, implicitcp[m.name], total_abatement_cost[m.name], MACeq[m.name], iMACeq[m.name], original_nm, previous_abatement, previous_cost_cp, GDP_percent, prev_remaining_abatement_cost)
             elif method == "abatement":   
                 abatement_cost[m.name] = return_revenues(m, club.cp, MACeq[m.name], iMACeq[m.name], previous_abatement, previous_revenue_ab, original_nm, total_abatement_nm)
-            elif gdp_method: #not finished, do not use
-                abatement_cost[m.name], cost_cp[m.name], remaining_abatement_cost[m.name] = cost_gdp_method(m, club.cp, implicitcp[m.name], total_abatement_cost[m.name], MACeq[m.name], iMACeq[m.name], GDP_percent, prev_remaining_abatement_cost)
+                remaining_abatement_cost[m.name] = abatement_cost[m.name]
             else:    
                 abatement_cost[m.name] = m.cost_abatement(club.cp, MACeq[m.name], iMACeq[m.name])
                 remaining_abatement_cost[m.name] = abatement_cost[m.name]
-            
+       
+            #Calculating investment in abatement costs 
+            if m.name in previous_abatement and consider_investment == True:
+                investment_abat_cost[m.name] += previous_abatement[m.name]    
         
         previous_abatement = abatement_cost.copy()               
         previous_revenue_ab = sum(cost_staying_nm.values())*di
@@ -121,7 +133,7 @@ def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distr
             potentialm = [ms for ms in original_m if ms != m]
             #potential_cp_original = calc_original_cp(originalcp, potentialm)
             cost = cost_analysis_m(m, exp_club[m.name], exp_ROW[m.name], cost_staying_nm, abatement_cost,
-                                   implicitcp[m.name], club_trade_size, cm_size, method, club, original_nm, original_m, mu, di, min_cp, cost_cp[m.name], remaining_abatement_cost[m.name])
+                                   implicitcp[m.name], club_trade_size, cm_size, method, club, original_nm, original_m, mu, di, min_cp, cost_cp[m.name], remaining_abatement_cost[m.name], investment_abat_cost[m.name])
             join_dictm[m.name] = cost
             status[regionsname.index(m.name)].append(1)
             #if costs are higher than the benefits region m leaves the club:
@@ -129,7 +141,7 @@ def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distr
                non_members.append(m)
                club.members = [region for region in club.members if region != m]
                print("LEAVING THE CLUB")
-            else: 
+            elif not gdp_method: 
                 m.cp = club.cp
             print("")
         
@@ -146,7 +158,7 @@ def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distr
             #pt_di = distribution*pt_club_trade_size       
             #print(nm.name, ":", pt_di)
             cost = cost_analysis(nm, exp_ROW[nm.name], cost_staying_nm, abatement_cost, implicitcp[nm.name],
-                                 club_trade_size, potentialm, cm_size, method, club, original_nm, mu, di, cost_cp[nm.name], remaining_abatement_cost[nm.name])
+                                 club_trade_size, potentialm, cm_size, method, club, original_nm, mu, di, min_cp, cost_cp[nm.name], remaining_abatement_cost[nm.name], investment_abat_cost[nm.name])
             join_dictnm[nm.name] = cost
             status[regionsname.index(nm.name)].append(0)
             #if benefits are higher than the costs region nm joins the club:
@@ -171,18 +183,21 @@ def run(init_coalition, carbon_price, tariff, method, rounds = 20, mu = 1, distr
     return regionsname, regionsemissions, status
 
 
-def cost_analysis(region, exp_ROW, cost_staying_nm, abatement_cost_nm, implicitcp, club_trade_size, potentialm, cm_size, method, club, original_nm, mu, di, cost_cp, remaining_abatement_cost):
-    print(club_trade_size)
+def cost_analysis(region, exp_ROW, cost_staying_nm, abatement_cost_nm, implicitcp, club_trade_size, potentialm, cm_size, method, club, original_nm, mu, di, min_cp, cost_cp, remaining_abatement_cost, investment_abat_cost):
+    #print(club_trade_size)
     #Cost-benefit analysis for non-members of the club
     abatement_cost = abatement_cost_nm[region.name]
-    cost_staying = cost_staying_nm[region.name]    
+    cost_staying = cost_staying_nm[region.name]
+    cost_staying_out = cost_staying + investment_abat_cost  
     loss_competitiveness = region.cost_competitiveness_nm(club.cp, club_trade_size, exp_ROW, original_nm, implicitcp)
-    cost_income = region.cost_income(club.cp, implicitcp, club_trade_size, original_nm)
+    cost_income = region.cost_income_nm(club.tariff, club.cp, implicitcp, club_trade_size, original_nm, min_cp)
     cost_joining =  abatement_cost + loss_competitiveness + cost_income + cost_cp
     benefit_joining = calc_benefit_joining(region, potentialm, method, cm_size, original_nm, cost_staying_nm, di)
     
     print(f"""    
-    Cost of staying out: {cost_staying}
+    Cost of BCA = {cost_staying}   
+    Investment in abatement costs = {investment_abat_cost}
+    Cost of staying out = {cost_staying_out}
     Abatement cost: {abatement_cost}
     Direct cost of carbon price: {cost_cp}
     Total cost of carbon price: {(abatement_cost) + (cost_cp)}
@@ -190,27 +205,29 @@ def cost_analysis(region, exp_ROW, cost_staying_nm, abatement_cost_nm, implicitc
     Loss of competitiveness = {loss_competitiveness}
     Income cost: {cost_income}
     Implicit carbon price: {implicitcp}
-    Potential club trade size: {club_trade_size}
     Cost of joining:     {cost_joining}
     Benefit of joining:  {benefit_joining}
     Net cost of joining: {cost_joining - (mu * benefit_joining)}
     Net cost of staying out: {(mu * cost_staying)}
-    Net joining - staying out: {int(cost_joining - (mu * benefit_joining) - (mu * cost_staying))} """) 
+    Net joining - staying out: {int(cost_joining - (mu * benefit_joining) - (mu * cost_staying_out))} """) 
 
 
-    return int(cost_joining - (mu * benefit_joining) - (mu * cost_staying))
+    return int(cost_joining - (mu * benefit_joining) - (mu * cost_staying_out))
 
-def cost_analysis_m(region, exp_club, exp_ROW, cost_staying_nm, abatement_cost, implicitcp, club_trade_size, cm_size, method, club, original_nm, original_m, mu, di, min_cp, cost_cp, remaining_abatement_cost):
+def cost_analysis_m(region, exp_club, exp_ROW, cost_staying_nm, abatement_cost, implicitcp, club_trade_size, cm_size, method, club, original_nm, original_m, mu, di, min_cp, cost_cp, remaining_abatement_cost, investment_abat_cost):
 #Cost-benefit analysis for members of the club
-    cost_leaving = region.cost_leaving(club.tariff, club.cp, exp_club, cm_size, min_cp, method) #needs to be changed and adapted for club members
+    cost_leaving = region.cost_leaving(club.tariff, club.cp, exp_club, cm_size, min_cp, method) 
+    cost_being_out = cost_leaving + investment_abat_cost
     abatement_cost = abatement_cost[region.name]
     loss_competitiveness = region.cost_competitiveness(club.cp, club_trade_size, exp_ROW, original_nm, implicitcp)
-    cost_income = region.cost_income(club.cp, implicitcp, club_trade_size, original_nm)
+    cost_income = region.cost_income(club.tariff, club.cp, implicitcp, club_trade_size, original_nm, min_cp)
     cost_staying_in =  abatement_cost + loss_competitiveness + cost_income + cost_cp    
     benefit_staying_in = calc_benefit_staying_in(region, original_m, method, cm_size, original_nm, cost_staying_nm, di) 
 
     print(f"""
-    Cost of leaving: {cost_leaving}
+    Cost of BCA = {cost_leaving}   
+    Investment in abatement costs = {investment_abat_cost}
+    Cost of leaving = {cost_being_out}
     Abatement cost: {abatement_cost}
     Direct cost of carbon price: {cost_cp}
     Total cost of carbon price: {(abatement_cost) + (cost_cp)}
@@ -221,10 +238,10 @@ def cost_analysis_m(region, exp_club, exp_ROW, cost_staying_nm, abatement_cost, 
     Benefit of staying in:  {benefit_staying_in}
     Net cost of staying in: {cost_staying_in - (mu * benefit_staying_in)}
     Net cost of leaving: {(mu * cost_leaving)}
-    Net staying in - leaving: {int(cost_staying_in - (mu * benefit_staying_in) - (mu * cost_leaving))} """) 
+    Net staying in - leaving: {int(cost_staying_in - (mu * benefit_staying_in) - (mu * cost_being_out))} """) 
 
 
-    return int(cost_staying_in - (mu * benefit_staying_in) - (mu * cost_leaving))
+    return int(cost_staying_in - (mu * benefit_staying_in) - (mu * cost_being_out))
 
 def cost_gdp_method_nm(region, club_cp, implicitcp, total_abatement_cost, MACeq, iMACeq, previous_abatement, previous_cost_cp, GDP_percent, prev_remaining_abatement_cost):
     
@@ -290,7 +307,7 @@ def returned_gdp_revenues_nm(region, club_cp, implicitcp, total_abatement_cost, 
                 remaining_abatement_cost_region = 0.0
             else:
                 share = previous_abatement[region.name] / total_abatement_nm
-                print(region.name, share, previous_revenue_ab, previous_revenue_ab * share)
+                #print(region.name, share, previous_revenue_ab, previous_revenue_ab * share)
                 remaining_abatement_cost_region = max(prev_remaining_abatement_cost[region.name] - previous_revenue_ab * share, 0.0)
                 #print(region.name, remaining_abatement_cost_region)
                 abatement_payment = region.gdp * GDP_percent  # Investment based on GDP
@@ -326,14 +343,20 @@ def returned_gdp_revenues_nm(region, club_cp, implicitcp, total_abatement_cost, 
 
     
 
-def cost_gdp_method(region, club_cp, implicitcp, total_abatement_cost, MACeq, iMACeq, GDP_percent, prev_remaining_abatement_cost): #notfinished
+def cost_gdp_method(region, club_cp, implicitcp, total_abatement_cost, MACeq, iMACeq, original_nm, previous_abatement, previous_cost_cp, GDP_percent, prev_remaining_abatement_cost): #notfinished
     if region.cp >= club_cp:                    
         abatement_cost = 0.0
         cost_cp = 0.0
         remaining_abatement_cost_region = 0.0   
+    elif region in original_nm:
+        remaining_abatement_cost_region = prev_remaining_abatement_cost[region.name]
+        abatement_cost = previous_abatement[region.name]
+        cost_cp = previous_cost_cp[region.name]
     elif region.name in prev_remaining_abatement_cost:
+        #print("This is happening")
         abatement_payment = region.gdp*GDP_percent
         remaining_abatement_cost_region = max(prev_remaining_abatement_cost[region.name] - abatement_payment, 0.0)
+        #print(region.name, remaining_abatement_cost_region)
         if 0.0 < remaining_abatement_cost_region < abatement_payment:
             cost_cp = 0.0
             abatement_cost = remaining_abatement_cost_region
@@ -353,7 +376,6 @@ def cost_gdp_method(region, club_cp, implicitcp, total_abatement_cost, MACeq, iM
     else:
         remaining_abatement_cost_region = total_abatement_cost
         abatement_payment = region.gdp*GDP_percent            
-        #m_cp[region.name] = region.find_carbon_price(abatement_payment, MACeq[region.name], iMACeq[region.name], club.cp)
         if remaining_abatement_cost_region < abatement_payment:
             cost_cp = 0.0
             abatement_cost = remaining_abatement_cost_region
@@ -371,14 +393,14 @@ def return_revenues(region, club_cp, MACeq, iMACeq, previous_abatement, previous
         abatement_cost = 0
     else:    
         if region.name in previous_abatement:
-            if region in original_nm:
-                if total_abatement_nm == 0:
-                    abatement_cost = 0
-                else:
-                    share = previous_abatement[region.name]/total_abatement_nm
-                    abatement_cost = previous_abatement[region.name] - previous_revenue_ab*share
-            else:    
-                abatement_cost = previous_abatement[region.name]
+           # if region in original_nm:
+           #     if total_abatement_nm == 0:
+           #         abatement_cost = 0
+           #     else:
+           #         share = previous_abatement[region.name]/total_abatement_nm
+           #         abatement_cost = previous_abatement[region.name] - previous_revenue_ab*share
+           # else:    
+            abatement_cost = previous_abatement[region.name]
         else:
             abatement_cost = region.cost_abatement(club_cp, MACeq, iMACeq)
     if abatement_cost < 0:
@@ -399,7 +421,7 @@ def return_gdp_revenues(region, club_cp, implicitcp, total_abatement_cost, MACeq
                 remaining_abatement_cost_region = 0.0
             else: 
                 share = previous_abatement[region.name]/total_abatement_nm
-                print(region.name, share, previous_revenue_ab)
+                #print(region.name, share, previous_revenue_ab)
                 remaining_abatement_cost_region =  max(prev_remaining_abatement_cost[region.name] - previous_revenue_ab * share, 0.0)
                 abatement_payment = region.gdp*GDP_percent
                 if 0.0 < remaining_abatement_cost_region < abatement_payment:
@@ -492,20 +514,40 @@ def calc_size(members,non_members):
     # Calculates the relative size of the club compared to non-members, in terms of trade.
     total_row = 0
     for region in members: #club trade with the rest of the world
-        total_row += sum(region.trade_partners[reg.name] for reg in non_members)
+        total_row += sum(region.trade_partners[nm.name] for nm in non_members)
 
     for region in non_members: #rest of the world trade with the rest of the world
-        total_row += sum(region.trade_partners[reg.name] for reg in non_members) 
+        total_row += sum(region.trade_partners[nm.name] for nm in non_members) 
         #añade al segundo total_row el valor del primero con +=
 
     total_club = 0
     for region in members: #club trade with the club
-        total_club += sum(region.trade_partners[reg.name] for reg in members)
+        total_club += sum(region.trade_partners[m.name] for m in members)
 
     for region in non_members: #rest of the world trade with the club
-        total_club += sum(region.trade_partners[reg.name] for reg in members)
+        total_club += sum(region.trade_partners[m.name] for m in members)
 
     return total_row / (total_row + total_club)
+
+def calc_size_cp(members, non_members, implicitcp, club_cp):
+    total_row = 0
+    
+    for region in members: #club trade with the rest of the world
+        total_row += sum(region.trade_partners[nm.name]*((club_cp - nm.cp)/(club_cp - implicitcp[nm.name])) for nm in non_members)
+
+    for region in non_members: #rest of the world trade with the rest of the world
+        total_row += sum(region.trade_partners[nm.name]*((club_cp - nm.cp)/(club_cp - implicitcp[nm.name])) for nm in non_members) 
+        #añade al segundo total_row el valor del primero con +=
+
+    total_club = 0
+    for region in members: #club trade with the club
+        total_club += sum(region.trade_partners[m.name] for m in members)
+
+    for region in non_members: #rest of the world trade with the club
+        total_club += sum(region.trade_partners[m.name] for m in members)
+
+    return total_row / (total_row + total_club)
+
 
 def calc_original_cp(originalcp,clubmembers): # Based on GDP
     #GDP-weighted average of the original (implicit) carbon price of all members.
